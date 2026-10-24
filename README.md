@@ -34,6 +34,9 @@ Open `http://localhost:5173`. Use **Explore opportunities** from the home page. 
 
 ## Offline and mobile use
 
+The Render presentation build uses VITE_STATIC_DEMO=true: it is a read-only showcase with fictional company samples, local browser profile/sign-in, and local text-based safety checks. Employer review submissions and backend writes are disabled in that public presentation build because the prototype backend does not isolate accounts. Never enter real personal information. The full local prototype still uses the Flask API when run with the backend.
+
+
 The installed web app caches its shell and the public company directory. If the service is unreachable, it opens a clearly labeled sample directory and keeps candidate profile edits on that device; those edits sync when the API is reachable again. Other offline actions are read-only. The directory rows shown without a service are fictional sample roles, not current vacancies. For a phone on the same Wi-Fi as a development laptop, set `VITE_API_BASE` to the laptop's reachable API URL and allow that origin in `CAREERTRUST_ALLOWED_ORIGINS`; a production deployment should serve the API and site through the same origin.
 
 ## Verify

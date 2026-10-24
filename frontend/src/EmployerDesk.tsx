@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowUpRight, Building2, CheckCircle2, Clock3, ExternalLink, ShieldCheck } from 'lucide-react';
 
 const API=(import.meta as any).env?.VITE_API_BASE||(location.hostname==='localhost'||location.hostname==='127.0.0.1'?'http://localhost:5000/api':'/api');
+const STATIC_DEMO=(import.meta as any).env?.VITE_STATIC_DEMO==='true';
 const emptyForm={organization:'',organization_type:'Small or local business',contact_email:'',website:'',evidence_route:'Shop or establishment license',role_title:'',location:'',description:'',pay_info:'',social_protection:'',growth_path:'',no_candidate_fee:false};
 async function call(path:string,options:RequestInit={}){
+ if(STATIC_DEMO)throw new Error('Employer submissions need the connected review service.');
  const response=await fetch(API+path,{headers:{'Content-Type':'application/json'},...options});
  const data=await response.json().catch(()=>({}));
  if(!response.ok){const error:any=new Error(data.error||'Could not complete this review step.');error.payload=data;throw error}
@@ -12,7 +14,7 @@ async function call(path:string,options:RequestInit={}){
 
 export default function EmployerDesk({offline=false}:{offline?:boolean}){
  const [items,setItems]=useState<any[]>([]),[form,setForm]=useState(emptyForm),[assessment,setAssessment]=useState<any>(null),[result,setResult]=useState<any>(null),[error,setError]=useState(''),[saving,setSaving]=useState(false),[checking,setChecking]=useState(false);
- async function load(){try{setItems(await call('/employer/submissions'))}catch(e:any){setError(e.message==='Failed to fetch'?'The local review queue is unavailable until the backend is running.':e.message)}}
+ async function load(){if(STATIC_DEMO){setItems([]);return}try{setItems(await call('/employer/submissions'))}catch(e:any){setError(e.message==='Failed to fetch'?'The local review queue is unavailable until the backend is running.':e.message)}}
  useEffect(()=>{load()},[]);
  function update(key:string,value:string|boolean){setForm(old=>({...old,[key]:value}));setAssessment(null);setResult(null)}
  async function runPreflight(){setChecking(true);setError('');setResult(null);try{setAssessment(await call('/employer/preflight',{method:'POST',body:JSON.stringify(form)}))}catch(e:any){setError(e.message);if(e.payload)setAssessment(e.payload)}finally{setChecking(false)}}

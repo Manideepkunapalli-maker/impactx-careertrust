@@ -5,6 +5,7 @@ import EmployerDesk from './EmployerDesk';
 import LanguageGuide from './LanguageGuide';
 import AccountGate from './AccountGate';
 const API=(import.meta as any).env?.VITE_API_BASE||(location.hostname==='localhost'||location.hostname==='127.0.0.1'?'http://localhost:5000/api':'/api');
+const STATIC_DEMO=(import.meta as any).env?.VITE_STATIC_DEMO==='true';
 const PROFILE_KEY='careertrust-profile-local';
 const PROFILE_PENDING='careertrust-profile-pending';
 function offlineProfile(){try{const saved=localStorage.getItem(PROFILE_KEY);if(saved)return JSON.parse(saved)}catch{}return{name:'',goal:'',location:'',college:'',education:'',language:'English',skills:{},evidence:[]}}
@@ -30,11 +31,12 @@ function notifyOffline(value:boolean){window.dispatchEvent(new CustomEvent('care
 async function api(path:string,opts:any={}){
  const method=(opts.method||'GET').toUpperCase();
  try{
+  if(STATIC_DEMO)throw new Error('Failed to fetch');
   const response=await fetch(API+path,{headers:{'Content-Type':'application/json'},...opts});const data=await response.json();if(!response.ok)throw Error(data.error||'Something went wrong. Please try again.');
   notifyOffline(false);
   if(path==='/profile'&&method==='GET'){
    const pending=localStorage.getItem(PROFILE_PENDING);
-   if(pending){try{const sync=await fetch(API+'/profile',{method:'PUT',headers:{'Content-Type':'application/json'},body:pending});if(sync.ok){const synced=await sync.json();localStorage.setItem(PROFILE_KEY,JSON.stringify(synced));localStorage.removeItem(PROFILE_PENDING);return synced}}catch{notifyOffline(true)}return offlineProfile()}
+   if(pending&&!STATIC_DEMO){try{const sync=await fetch(API+'/profile',{method:'PUT',headers:{'Content-Type':'application/json'},body:pending});if(sync.ok){const synced=await sync.json();localStorage.setItem(PROFILE_KEY,JSON.stringify(synced));localStorage.removeItem(PROFILE_PENDING);return synced}}catch{notifyOffline(true)}return offlineProfile()}
    try{localStorage.setItem(PROFILE_KEY,JSON.stringify(data))}catch{}
   }
   if(method==='GET'&&(path==='/jobs'||path==='/dashboard'))try{const safe=path==='/jobs'?data.map((job:any)=>({...job,match:{score:'\u2014',supported:[],gaps:[],requirements:[]},saved:false,offline_snapshot:true})):data;localStorage.setItem('careertrust-cache:'+path,JSON.stringify(safe))}catch{}
