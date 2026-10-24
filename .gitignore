@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+backend/.venv/
+backend/instance/*.db
+
+# Frontend builds and dependencies
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
