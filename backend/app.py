@@ -152,6 +152,49 @@ def assess(text,employer='',email='',domain='',url=''):
  if dup: signals.append({'label':'Text resembles a labelled synthetic demo clone','evidence':'Similar wording appears in synthetic listing #'+str(dup.id),'points':20})
  score=min(100,sum(x['points'] for x in signals)); tier='High-risk indicators detected' if score>=50 else ('Verification recommended' if score>=20 else ('Unable to verify' if not domain and not email else 'Lower observed risk'))
  return {'tier':tier,'score':score,'signals':signals,'verification':'Domain checked only against fictional local demo references; no live verification performed.','precautions':['Never pay to apply or secure an interview.','Verify the vacancy through an independently located official channel.','Share sensitive identity or bank information only through a verified hiring process.'],'comparison':({'id':dup.id,'title':dup.title,'employer':dup.employer,'source':dup.source} if dup else None),'disclaimer':'A warning is not proof of fraud. Demo scores are transparent rule totals, not calibrated probabilities.'}
+
+def assess_employer_submission(data):
+ organization=str(data.get('organization','')).strip()[:160]
+ email=str(data.get('contact_email','')).strip()[:200]
+ website=str(data.get('website','')).strip().lower().removeprefix('https://').removeprefix('http://').split('/')[0][:200]
+ role=str(data.get('role_title','')).strip()[:160]
+ description=str(data.get('description','')).strip()[:6000]
+ evidence=str(data.get('evidence_route','')).strip()[:80]
+ org_type=str(data.get('organization_type','')).strip()[:50]
+ base=assess(description,organization,email,website)
+ signals=[x for x in base['signals'] if x['label']!='Domain not in demo reference records']
+ email_domain=email.rsplit('@',1)[-1].lower() if '@' in email else ''
+ free_domains={'gmail.com','yahoo.com','yahoo.in','outlook.com','hotmail.com','rediffmail.com'}
+ if email_domain in free_domains: signals.append({'label':'Personal mailbox needs additional organization check','evidence':email_domain,'points':10})
+ if not website: signals.append({'label':'No public website supplied; alternate business evidence needs review','evidence':evidence or 'No evidence route selected','points':5})
+ if org_type=='Authorized staffing partner' and evidence!='Authorization from the hiring organization': signals.append({'label':'Staffing-partner authorization not supplied','evidence':evidence or 'No authorization route selected','points':20})
+ reference=Job.query.filter(db.func.lower(Job.employer)==organization.lower()).first() if organization else None
+ if reference and website and website!=reference.domain.lower(): signals.append({'label':'Organization name matches a demo employer but website differs','evidence':website+' vs '+reference.domain,'points':25})
+ score=min(100,sum(x['points'] for x in signals))
+ fee_pledge_missing=data.get('no_candidate_fee') is not True
+ changes_required=score>=50 or fee_pledge_missing
+ band='Elevated review signals' if score>=20 else 'No configured signal found'
+ corrections=[]
+ for signal in signals:
+  label=signal['label']
+  if 'payment' in label.lower() or 'training' in label.lower(): corrections.append('Remove any candidate-paid application, interview, training, toolkit, or onboarding condition.')
+  elif 'sensitive information' in label.lower(): corrections.append('Remove requests for bank, identity, password, or one-time-code details from the job process.')
+  elif 'mailbox' in label.lower(): corrections.append('Use a work contact address if available, or be prepared to provide alternate business evidence.')
+  elif 'website' in label.lower() or 'domain differs' in label.lower(): corrections.append('Check that the contact address and website represent the hiring organization, or explain the relationship.')
+  elif 'staffing-partner' in label.lower(): corrections.append('Provide authorization from the organization that owns the vacancy.')
+ corrections=list(dict.fromkeys(corrections))
+ if fee_pledge_missing: corrections.append('Confirm that candidates will not be charged to apply, interview, complete mandatory training, buy a toolkit, or secure this role.')
+ if score>=50 and not corrections: corrections.append('Review the highlighted organization and vacancy details, then correct or explain each signal before resubmitting.')
+ if not corrections: corrections=['No configured wording or contact mismatch was found. This is not verification; complete the independent checks below.']
+ authority_checks=[
+  {'name':'Business registration','status':'Not checked','detail':'Optional official lookup; the platform has no live registry connection. GSTIN is not required.','sources':[{'label':'Udyam verification','url':'https://www.udyamregistration.gov.in/Udyam_Verify.aspx'},{'label':'MCA company and LLP records','url':'https://www.mca.gov.in/'},{'label':'GST taxpayer search (optional)','url':'https://tutorial.gst.gov.in/userguide/taxpayersdashboard/Search_Taxpayer.htm'}]},
+  {'name':'Contact and domain ownership','status':'Not checked','detail':'Email and website consistency is a local rule signal only; ownership is not verified.'},
+  {'name':'Vacancy and hiring authority','status':'Not checked','detail':'No employer or vacancy owner has been contacted.'},
+  {'name':'No-fee policy','status':'Employer attestation only','detail':'A checkbox is not an independent audit of hiring conduct.'},
+  {'name':'Human review','status':'Unavailable in this demo','detail':'No reviewer console or approval service is connected.'},
+ ]
+ disposition='No-fee pledge required before submission' if fee_pledge_missing else ('Changes required before submission' if score>=50 else 'Human review required before publication')
+ return {'risk_score':score,'band':band,'score_type':'Rule-based review score, not a fraud probability','requires_changes':changes_required,'disposition':disposition,'signals':signals,'corrections':corrections,'authority_checks':authority_checks,'publishable':False}
 @app.post('/api/trust')
 def trust():
  d=request.get_json() or {}; j=Job.query.get(d.get('job_id')) if d.get('job_id') else None
@@ -190,22 +233,23 @@ def reset():
  TrustReport.query.delete(); EmployerSubmission.query.delete(); Disclosure.query.delete(); ResumeVersion.query.delete(); InterviewPrompt.query.delete(); Application.query.delete(); Task.query.delete(); Job.query.delete(); Candidate.query.delete(); db.session.commit(); seed(); return jsonify({'status':'demo reset','jobs':Job.query.count()})
 @app.get('/api/employer/submissions')
 def employer_submissions():
- return jsonify([{'id':x.id,'organization':x.organization,'role_title':x.role_title,'status':x.status,'created':x.created.isoformat(),'pay_info':x.pay_info or '','social_protection':x.social_protection or '','growth_path':x.growth_path or '', 'signals':json.loads(x.signals or '[]')} for x in EmployerSubmission.query.order_by(EmployerSubmission.created.desc()).all()])
+ return jsonify([{'id':x.id,'organization':x.organization,'role_title':x.role_title,'status':x.status,'created':x.created.isoformat(),'pay_info':x.pay_info or '','social_protection':x.social_protection or '','growth_path':x.growth_path or '', 'signals':json.loads(x.signals or '[]'),'risk_score':min(100,sum(s.get('points',0) for s in json.loads(x.signals or '[]'))),'publishable':False} for x in EmployerSubmission.query.order_by(EmployerSubmission.created.desc()).all()])
+@app.post('/api/employer/preflight')
+def employer_preflight():
+ data=request.get_json() or {}
+ return jsonify(assess_employer_submission(data))
 @app.post('/api/employer/submissions')
 def create_employer_submission():
  d=request.get_json() or {}; organization=str(d.get('organization','')).strip()[:160]; email=str(d.get('contact_email','')).strip()[:200]; website=str(d.get('website','')).strip().lower().removeprefix('https://').removeprefix('http://').split('/')[0][:200]; role=str(d.get('role_title','')).strip()[:160]; description=str(d.get('description','')).strip()[:6000]; evidence=str(d.get('evidence_route','')).strip()[:80]; org_type=str(d.get('organization_type','')).strip()[:50]; pay_info=str(d.get('pay_info','')).strip()[:180]; social_protection=str(d.get('social_protection','')).strip()[:180]; growth_path=str(d.get('growth_path','')).strip()[:240]
  if not organization or '@' not in email or not role or len(description)<30: return jsonify({'error':'Add an organization, contact email, role title, and at least 30 characters describing the role.'}),400
  if evidence not in ['Udyam registration','Shop or establishment license','Local trade permit','Employer reference check','Authorization from the hiring organization','Other business evidence']: return jsonify({'error':'Choose one business evidence route. Do not enter Aadhaar, PAN, bank, GSTIN, or EPFO identifiers.'}),400
  if d.get('no_candidate_fee') is not True: return jsonify({'error':'Confirm that candidates will not be charged to apply, interview, train, or secure this role.'}),400
- risk=assess(description,organization,email,website); signals=[x for x in risk['signals'] if x['label']!='Domain not in demo reference records']
- email_domain=email.rsplit('@',1)[-1].lower(); free_domains={'gmail.com','yahoo.com','yahoo.in','outlook.com','hotmail.com','rediffmail.com'}
- if email_domain in free_domains: signals.append({'label':'Personal mailbox needs additional organization check','evidence':email_domain,'points':10})
- if not website: signals.append({'label':'No public website supplied; alternate business evidence needs review','evidence':evidence,'points':5})
- if org_type=='Authorized staffing partner' and evidence!='Authorization from the hiring organization': signals.append({'label':'Staffing-partner authorization not supplied','evidence':evidence,'points':20})
- reference=Job.query.filter(db.func.lower(Job.employer)==organization.lower()).first()
- if reference and website and website!=reference.domain.lower(): signals.append({'label':'Organization name matches a demo employer but website differs','evidence':website+' vs '+reference.domain,'points':25})
+ assessment=assess_employer_submission(d)
+ if assessment['requires_changes']:
+  return jsonify({**assessment,'error':'This listing needs changes before it can be submitted. Review the matched signals and correct or explain them.'}),422
+ signals=assessment['signals']
  row=EmployerSubmission(organization=organization,organization_type=org_type,contact_email=email,website=website,evidence_route=evidence,role_title=role,location=str(d.get('location',''))[:120],description=description,status='Pending review',signals=json.dumps(signals),pay_info=pay_info,social_protection=social_protection,growth_path=growth_path); db.session.add(row); db.session.commit()
- return jsonify({'id':row.id,'status':row.status,'publishable':False,'signals':signals,'message':'This submission is held for manual review. It is not a published vacancy; this demo has no reviewer or live verification connection.'}),201
+ return jsonify({'id':row.id,'status':row.status,'publishable':False,'signals':signals,'risk_score':assessment['risk_score'],'score_type':assessment['score_type'],'authority_checks':assessment['authority_checks'],'message':'Submission received in the local review queue. No authority lookup or human review is connected, and this role is not published.'}),201
 
 @app.get('/api/dashboard')
 def dashboard():

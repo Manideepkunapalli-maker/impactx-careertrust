@@ -2,7 +2,7 @@ import unittest
 import os
 from datetime import datetime, timedelta
 os.environ['CAREERTRUST_DATABASE_URI']='sqlite://'
-from app import app, db, Candidate, Job, Application, Task, seed
+from app import app, db, Candidate, Job, Application, Task, EmployerSubmission, seed
 class CareerTrustTests(unittest.TestCase):
  def setUp(self):
   app.config['TESTING']=True
@@ -61,6 +61,24 @@ class CareerTrustTests(unittest.TestCase):
   self.assertTrue(response.json['signals'])
   self.assertEqual(Job.query.count(),before)
   self.assertEqual(self.client.get('/api/employer/submissions').json[0]['status'],'Pending review')
+ def test_employer_preflight_is_transparent_and_never_publishable(self):
+  payload={'organization':'Corner Market','organization_type':'Small or local business','contact_email':'owner@cornermarket.example','website':'','evidence_route':'Local trade permit','role_title':'Store assistant','location':'Local','description':'Help customers, arrange shelves, and check daily inventory with the shop owner.','no_candidate_fee':True}
+  result=self.client.post('/api/employer/preflight',json=payload)
+  self.assertEqual(result.status_code,200)
+  self.assertIn('not a fraud probability',result.json['score_type'])
+  self.assertFalse(result.json['publishable'])
+  self.assertFalse(result.json['requires_changes'])
+  self.assertTrue(any(x['status']=='Not checked' for x in result.json['authority_checks']))
+  self.assertTrue(any(y['label']=='Udyam verification' for x in result.json['authority_checks'] for y in x.get('sources',[])))
+ def test_high_risk_employer_submission_returns_for_changes_without_saving(self):
+  before=EmployerSubmission.query.count()
+  payload={'organization':'Corner Market','organization_type':'Small or local business','contact_email':'owner@cornermarket.example','website':'cornermarket.example','evidence_route':'Local trade permit','role_title':'Store assistant','location':'Local','description':'Pay a registration fee and send your bank details immediately to secure this guaranteed placement.','no_candidate_fee':True}
+  response=self.client.post('/api/employer/submissions',json=payload)
+  self.assertEqual(response.status_code,422)
+  self.assertTrue(response.json['requires_changes'])
+  self.assertGreaterEqual(response.json['risk_score'],50)
+  self.assertFalse(response.json['publishable'])
+  self.assertEqual(EmployerSubmission.query.count(),before)
  def test_candidate_profile_includes_college_and_language_without_matching_on_them(self):
   p=self.client.get('/api/profile').json; p.update({'college':'Demo College','education':'Diploma','language':'తెలుగు'})
   self.assertEqual(self.client.put('/api/profile',json=p).status_code,200)
