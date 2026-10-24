@@ -57,7 +57,7 @@ The tests use an isolated in-memory SQLite database. The evaluation screen compu
 - Computed controlled fairness checks and synthetic scam-evaluation metrics.
 - Dashboard counts from persisted records; confirmed reset of local demo records.
 - Photographic banyan hero with perspective leaf-turn animation, source-linked rotating notes, and a responsive layout; PWA shell and limited cache of public listings and aggregate counts for low-connectivity use.
-- Candidate profile fields for college, education, language, career direction, and skills. College and language preference are not used to score job matches. This is a local profile, not a sign-in or NCS account.
+- Browser-level prototype sign-in/sign-up followed by candidate profile setup; account password verifiers and profiles stay in that browser. This is a navigation/demo gate only, not server authentication, account recovery, or multi-user data isolation. Do not use real passwords or personal data.
 - Employer vacancy intake with a staged preflight, alternate local-business evidence routes, a required no-fee pledge, and explainable contact/text signals. A score of 50/100 or more returns the draft for correction; lower scores still enter `Pending review` and are never published automatically. This score is a rules total, not a fraud probability.
 - Employer preflight lists official Udyam, MCA, and optional GST lookup portals as manual references. None is integrated: authority checks and human review remain `Not checked` or unavailable, and the UI never labels a company verified.
 - Multi-turn offline Career Language Guide with 13 language choices and curated job-term explanations. Arbitrary text is not fully translated; the helper stays on-device.
